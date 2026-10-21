@@ -34,6 +34,7 @@ class Settings:
     query_timeout: int = int(os.environ.get("ORACLE_QUERY_TIMEOUT", "30"))  # seconds
     explain_cost_limit: int = int(os.environ.get("ORACLE_EXPLAIN_COST_LIMIT", "1000000"))
     max_concurrency: int = int(os.environ.get("ORACLE_MAX_CONCURRENCY", "4"))
+    auto_mask: bool = os.environ.get("ORACLE_AUTO_MASK", "1").lower() not in ("0", "false", "no")
     audit_log_path: str = os.environ.get("AUDIT_LOG_PATH", str(Path.cwd() / "logs" / "audit.jsonl"))
     http_token: str | None = os.environ.get("MCP_HTTP_TOKEN") or None
 
@@ -56,8 +57,9 @@ def _overrides_path() -> Path:
 @dataclass
 class ConnOverride:
     username: str | None = None
-    schemas: list[str] = field(default_factory=list)   # allowlist; empty => all visible
-    mask_columns: list[str] = field(default_factory=list)  # "SCHEMA.TABLE.COLUMN"
+    schemas: list[str] = field(default_factory=list)       # allowlist; empty => all visible
+    mask_columns: list[str] = field(default_factory=list)  # force-mask: "SCHEMA.TABLE.COLUMN" or "COLUMN"
+    unmask_columns: list[str] = field(default_factory=list)  # exempt a column name from auto-masking
 
     @classmethod
     def from_dict(cls, d: dict) -> "ConnOverride":
@@ -65,6 +67,7 @@ class ConnOverride:
             username=d.get("username"),
             schemas=[s.upper() for s in d.get("schemas", [])],
             mask_columns=[c.upper() for c in d.get("mask_columns", [])],
+            unmask_columns=[c.upper() for c in d.get("unmask_columns", [])],
         )
 
     def to_dict(self) -> dict:
@@ -72,6 +75,7 @@ class ConnOverride:
             "username": self.username,
             "schemas": self.schemas,
             "mask_columns": self.mask_columns,
+            "unmask_columns": self.unmask_columns,
         }
 
 

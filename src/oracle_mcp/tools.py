@@ -15,8 +15,9 @@ from .security import (
     SchemaNotAllowed,
     audit,
     check_schema,
+    columns_to_mask,
+    is_pii_name,
     mask_rows,
-    masked_names_for_table,
     sensitive_column_names,
 )
 
@@ -112,11 +113,16 @@ def register(mcp) -> None:
         )
         pk = {k["COLUMN_NAME"] for k in keys if k["CONSTRAINT_TYPE"] == "P"}
         fk = {k["COLUMN_NAME"] for k in keys if k["CONSTRAINT_TYPE"] == "R"}
-        masked = masked_names_for_table(get_override(db.resolve(connection)[0].id), schema_u, table_u)
+        ov = get_override(db.resolve(connection)[0].id)
+        forced = {n.upper() for n in sensitive_column_names(ov)}
+        unmask = {u.upper() for u in ov.unmask_columns}
         for c in cols:
-            c["is_pk"] = c["COLUMN_NAME"] in pk
-            c["is_fk"] = c["COLUMN_NAME"] in fk
-            c["masked"] = c["COLUMN_NAME"] in masked
+            name = c["COLUMN_NAME"]
+            c["is_pk"] = name in pk
+            c["is_fk"] = name in fk
+            c["masked"] = (name.upper() not in unmask) and (
+                name.upper() in forced or (SETTINGS.auto_mask and is_pii_name(name))
+            )
         audit(SETTINGS.audit_log_path, {"tool": "describe_table", "connection": connection,
                                         "schema": schema_u, "table": table_u})
         return {"schema": schema_u, "table": table_u, "columns": cols}
@@ -183,7 +189,7 @@ def register(mcp) -> None:
         check_schema(ov, schema_u)
         limit = max(1, min(int(limit), SETTINGS.max_rows))
         result = db.run_select(connection, f'SELECT * FROM "{schema_u}"."{table_u}"', limit)
-        result["rows"] = mask_rows(result["rows"], masked_names_for_table(ov, schema_u, table_u))
+        result["rows"] = mask_rows(result["rows"], columns_to_mask(result["columns"], result["rows"], ov))
         audit(SETTINGS.audit_log_path, {"tool": "sample_table", "connection": connection,
                                         "schema": schema_u, "table": table_u,
                                         "row_count": result["row_count"]})
@@ -207,7 +213,7 @@ def register(mcp) -> None:
             audit(SETTINGS.audit_log_path, {"tool": "run_query", "connection": connection,
                                             "sql": sql, "rejected": err})
             raise
-        result["rows"] = mask_rows(result["rows"], sensitive_column_names(ov))
+        result["rows"] = mask_rows(result["rows"], columns_to_mask(result["columns"], result["rows"], ov))
         audit(SETTINGS.audit_log_path, {"tool": "run_query", "connection": connection,
                                         "sql": sql, "row_count": result["row_count"],
                                         "explain_cost": result.get("explain_cost")})

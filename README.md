@@ -22,8 +22,14 @@ ChatGPT) inspect schemas and run guarded `SELECT` queries in plain language.
   (rejecting unknown tables/columns and very expensive plans), a row cap is
   always injected, there is a query timeout, and **timed-out queries are not
   retried**.
-- **Data protection:** optional schema allowlist, column masking for sensitive
-  fields (national id, bank account…), and a JSONL audit log of every query.
+- **Automatic PII masking:** the server inspects each returned column's name
+  (and, as a fallback, its values) and masks the ones that look like personal
+  data — national id, names, date of birth, email, phone, income, bank account,
+  address — with no per-column list to maintain. Category columns like
+  `INCOME_TYPE` or `MAJOR_NAME` are left alone. Tune per connection with
+  `unmask_columns` (exempt a false positive) or `mask_columns` (force extra), or
+  turn it off with `ORACLE_AUTO_MASK=0`.
+- **Also:** optional schema allowlist and a JSONL audit log of every query.
 
 ## Requirements
 
@@ -108,11 +114,22 @@ reachable from the internet. **Do not expose databases with PII to ChatGPT.**
 | `ORACLE_QUERY_TIMEOUT` | 30 | seconds |
 | `ORACLE_EXPLAIN_COST_LIMIT` | 1000000 | reject plans above this cost |
 | `ORACLE_MAX_CONCURRENCY` | 4 | max concurrent queries |
+| `ORACLE_AUTO_MASK` | 1 | auto-detect & mask PII columns (`0` to disable) |
 | `AUDIT_LOG_PATH` | `./logs/audit.jsonl` | audit log location |
 | `MCP_HTTP_TOKEN` | — | bearer token required for `--http` mode |
 | `DBEAVER_WORKSPACE` / `SQLDEV_SYSTEM_DIR` | — | override store locations |
 
-Per-connection schema allowlist and masked columns live in a local
-`overrides.json` (no secrets) under `%APPDATA%\oracle-mcp\`.
+Per-connection schema allowlist and masking overrides live in a local
+`overrides.json` (no secrets) under `%APPDATA%\oracle-mcp\`:
+
+```json
+{
+  "192.168.66.11:1521:oraappsdev": {
+    "schemas": ["SLFAPPS"],
+    "unmask_columns": ["BORROWER_ADDRESS_PROVINCE"],
+    "mask_columns": ["SLFAPPS.STUDENT_LOAN_REGISTER.BORROWER_GPA"]
+  }
+}
+```
 
 See [AGENTS.md](AGENTS.md) for a step-by-step install an agent can follow.

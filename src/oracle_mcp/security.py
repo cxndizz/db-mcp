@@ -1,16 +1,98 @@
-"""Data-protection layer: schema allowlist, column masking, and audit logging."""
+"""Data-protection layer: schema allowlist, automatic column masking, and audit
+logging.
+
+Masking is automatic: the server inspects each returned column's name (and, as a
+fallback, its values) and masks the ones that look like personal data, so no
+per-column list has to be maintained. A connection may still force extra columns
+to mask (``mask_columns``) or exempt false positives (``unmask_columns``).
+"""
 
 from __future__ import annotations
 
 import json
+import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
-from .config import ConnOverride
+from .config import SETTINGS, ConnOverride
 
 MASK_VALUE = "***"
+
+# --- automatic PII detection by column name -------------------------------
+# Strong identifiers: masked even when a "safe" word is also present.
+_PII_NAME = re.compile(
+    r"(CID|NATIONAL_?ID|CITIZEN_?ID|PASSPORT|TAX_?ID|"
+    r"FIRST_?NAME|LAST_?NAME|FULL_?NAME|MIDDLE_?NAME|SURNAME|FNAME|LNAME|"
+    r"DOB|BIRTH|"
+    r"EMAIL|PHONE|MOBILE|FAX|"
+    r"INCOME|SALARY|"
+    r"BANK_?ACC|ACCOUNT_?NO|ACCT_?NO|IBAN|CARD_?NO|"
+    r"ADDRESS|ZIPCODE|POSTAL)",
+    re.IGNORECASE,
+)
+# Institution / category columns that merely contain a PII-ish word.
+_SAFE_NAME = re.compile(
+    r"(UNIV|INSTITUT|SCHOOL_?NAME|MAJOR_?NAME|PROG|FACULTY|"
+    r"BANK_?NAME|BRANCH_?NAME|COMPANY_?NAME|ORG_?NAME|FILE_?NAME|"
+    r"_TYPE|_CODE|_DESC|_FLAG|_STATUS|NATIONALITY)",
+    re.IGNORECASE,
+)
+# Content fallback for oddly-named columns.
+_THAI_CID = re.compile(r"^\d{13}$")
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def is_pii_name(column: str) -> bool:
+    """Heuristic: does this column name denote personal data?
+
+    Masks names carrying a PII token (CID, EMAIL, ADDRESS, INCOME, …) but exempts
+    category/lookup columns that merely contain such a word — e.g. ``INCOME_TYPE``,
+    ``EMAIL_STATUS``, ``MAJOR_NAME``, ``NATIONALITY_TYPE``.
+    """
+    return bool(_PII_NAME.search(column)) and not bool(_SAFE_NAME.search(column))
+
+
+def _looks_like_pii_values(values: Sequence[Any]) -> bool:
+    """Content fallback: a column whose non-null values look like CIDs or emails."""
+    seen = 0
+    for v in values:
+        if v is None:
+            continue
+        s = str(v).strip()
+        if not s:
+            continue
+        seen += 1
+        if _THAI_CID.match(s) or _EMAIL.match(s):
+            return True
+        if seen >= 25:  # sample enough, then stop
+            break
+    return False
+
+
+def columns_to_mask(
+    columns: Sequence[str],
+    rows: Sequence[dict[str, Any]],
+    override: ConnOverride,
+) -> set[str]:
+    """Decide which returned columns to mask: auto-detected ∪ forced − exempted."""
+    unmask = {u.upper() for u in override.unmask_columns}
+    forced = {n.upper() for n in sensitive_column_names(override)}
+    result: set[str] = set()
+    for col in columns:
+        cu = col.upper()
+        if cu in unmask:
+            continue
+        if cu in forced:
+            result.add(col)
+            continue
+        if SETTINGS.auto_mask and is_pii_name(col):
+            result.add(col)
+            continue
+        if SETTINGS.auto_mask and _looks_like_pii_values([r.get(col) for r in rows]):
+            result.add(col)
+    return result
 
 
 class SchemaNotAllowed(PermissionError):
