@@ -1,0 +1,27 @@
+# Secrets & local state — NEVER commit
+.env
+*.local.json
+overrides.json
+
+# Logs / audit
+logs/
+*.log
+*.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.uv/
+uv.lock
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
