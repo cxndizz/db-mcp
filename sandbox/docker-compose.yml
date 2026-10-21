@@ -1,0 +1,22 @@
+# Phase 0 sandbox: a local PostgreSQL to build & test the multi-user flow
+# without touching real Oracle / real PII.
+#
+#   cd sandbox && docker compose up -d
+#   (first start runs init/ to create the schema, synthetic data, and a
+#    read-only role `mcp_ro`)
+services:
+  postgres:
+    image: postgres:16
+    container_name: dbmcp-sandbox-pg
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: sandbox
+    ports:
+      - "15432:5432"          # host 15432 -> avoid clashing with a local 5432
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sandbox"]
+      interval: 5s
+      timeout: 3s
+      retries: 12

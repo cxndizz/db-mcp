@@ -1,0 +1,10 @@
+[
+  {
+    "name": "pg-sandbox",
+    "engine": "postgres",
+    "host": "127.0.0.1",
+    "port": 15432,
+    "db_name": "sandbox",
+    "username": "mcp_ro"
+  }
+]
