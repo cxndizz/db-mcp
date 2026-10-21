@@ -20,20 +20,20 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import oracledb
-
 
 @dataclass
 class Connection:
-    """A discovered Oracle connection target (no secrets)."""
+    """A connection target (no secrets). Discovered from DBeaver/SQL Developer
+    (Oracle) or declared in a server-config file (Oracle or PostgreSQL)."""
 
     host: str
     port: int
-    db_name: str          # SID or service name
-    is_service: bool      # True => service name, False => SID
+    db_name: str          # SID or service name (Oracle) / database name (Postgres)
+    is_service: bool      # Oracle: service name vs SID. Postgres: always True.
     username: str | None = None
-    sources: set[str] = field(default_factory=set)   # {"dbeaver", "sqldev"}
-    names: set[str] = field(default_factory=set)      # friendly names from each app
+    engine: str = "oracle"  # "oracle" | "postgres"
+    sources: set[str] = field(default_factory=set)   # {"dbeaver", "sqldev", "config"}
+    names: set[str] = field(default_factory=set)      # friendly names
 
     @property
     def id(self) -> str:
@@ -46,12 +46,6 @@ class Connection:
         sep = "/" if self.is_service else ":"
         return f"{self.host}:{self.port}{sep}{self.db_name}"
 
-    @property
-    def dsn(self) -> str:
-        if self.is_service:
-            return oracledb.makedsn(self.host, self.port, service_name=self.db_name)
-        return oracledb.makedsn(self.host, self.port, sid=self.db_name)
-
     def matches(self, selector: str) -> bool:
         """True if ``selector`` is this connection's id or one of its app names."""
         sel = selector.strip().lower()
@@ -63,6 +57,7 @@ class Connection:
         return {
             "id": self.id,
             "names": sorted(self.names),
+            "engine": self.engine,
             "host": self.host,
             "port": self.port,
             "db_name": self.db_name,
@@ -221,13 +216,46 @@ def _merge(conns: list[Connection]) -> list[Connection]:
     return list(merged.values())
 
 
+def server_connections() -> list[Connection]:
+    """Connections declared in a server-config JSON file (``DB_MCP_CONNECTIONS``).
+
+    For headless servers (no DBeaver/SQL Developer). Each entry:
+    ``{"engine": "postgres", "host": "127.0.0.1", "port": 5432,
+       "db_name": "sandbox", "username": "mcp_ro", "name": "pg-sandbox"}``
+    Oracle entries may add ``"is_service": false`` for a SID. No passwords here.
+    """
+    path = os.environ.get("DB_MCP_CONNECTIONS")
+    if not path or not Path(path).is_file():
+        return []
+    try:
+        entries = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    out: list[Connection] = []
+    for e in entries if isinstance(entries, list) else []:
+        engine = (e.get("engine") or "oracle").lower()
+        host, port = e.get("host"), e.get("port")
+        db_name = e.get("db_name") or e.get("database")
+        if not (host and port and db_name):
+            continue
+        is_service = bool(e.get("is_service", engine != "oracle"))  # Postgres: always service-style
+        name = e.get("name") or e.get("id") or f"{engine}:{host}"
+        out.append(Connection(
+            host=str(host), port=int(port), db_name=str(db_name), is_service=is_service,
+            username=e.get("username") or None, engine=engine,
+            sources={"config"}, names={name},
+        ))
+    return out
+
+
 def discover() -> list[Connection]:
-    """Discover and merge all Oracle connections from both apps."""
+    """Discover and merge connections from desktop stores and server config."""
     found: list[Connection] = []
     for p in dbeaver_store_paths():
         found += parse_dbeaver(_load_json(p))
     for p in sqldev_store_paths():
         found += parse_sqldev(_load_json(p))
+    found += server_connections()
     result = _merge(found)
     result.sort(key=lambda c: c.id.lower())
     return result

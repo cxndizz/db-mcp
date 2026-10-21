@@ -2,7 +2,6 @@ import pytest
 
 from oracle_mcp.safety import (
     SqlNotAllowed,
-    enforce_row_cap,
     parse_single_select,
     referenced_tables,
 )
@@ -80,7 +79,6 @@ def test_referenced_tables_excludes_cte():
     assert "X" not in names
 
 
-def test_row_cap_wraps():
-    capped = enforce_row_cap("SELECT * FROM emp", 50)
-    assert "ROWNUM <= 50" in capped
-    assert capped.strip().upper().startswith("SELECT * FROM (")
+def test_postgres_dialect_parses():
+    # LIMIT is valid in the postgres dialect.
+    parse_single_select("SELECT * FROM emp LIMIT 10", dialect="postgres")

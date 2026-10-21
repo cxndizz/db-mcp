@@ -70,6 +70,28 @@ def test_merge_dedupes_and_fills_username():
 def test_connection_id_and_matching():
     prod = parse_sqldev(SQLDEV)[0]
     assert prod.id == "oradb.example:1553:oraapps"
+    assert prod.engine == "oracle"
     assert prod.matches("PROD")
     assert prod.matches("oradb.example:1553:oraapps")
     assert not prod.matches("nope")
+
+
+def test_server_connections_postgres(tmp_path, monkeypatch):
+    import json
+    from oracle_mcp.discovery import server_connections
+
+    cfg = tmp_path / "conns.json"
+    cfg.write_text(json.dumps([
+        {"engine": "postgres", "host": "127.0.0.1", "port": 5432,
+         "db_name": "sandbox", "username": "mcp_ro", "name": "pg-sandbox"},
+    ]), encoding="utf-8")
+    monkeypatch.setenv("DB_MCP_CONNECTIONS", str(cfg))
+
+    conns = server_connections()
+    assert len(conns) == 1
+    c = conns[0]
+    assert c.engine == "postgres"
+    assert c.is_service is True  # postgres is service-style
+    assert c.id == "127.0.0.1:5432/sandbox"
+    assert c.username == "mcp_ro"
+    assert c.sources == {"config"}

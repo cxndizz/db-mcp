@@ -31,14 +31,14 @@ def _strip_trailing_semicolons(sql: str) -> str:
     return sql.strip().rstrip(";").strip()
 
 
-def parse_single_select(sql: str) -> exp.Expression:
+def parse_single_select(sql: str, dialect: str = DIALECT) -> exp.Expression:
     """Parse ``sql`` and assert it is exactly one read-only SELECT statement."""
     raw = _strip_trailing_semicolons(sql)
     if not raw:
         raise SqlNotAllowed("Empty query.")
 
     try:
-        statements = sqlglot.parse(raw, dialect=DIALECT)
+        statements = sqlglot.parse(raw, dialect=dialect)
     except sqlglot.errors.ParseError as e:
         raise SqlNotAllowed(f"Could not parse SQL (syntax error): {e}") from e
 
@@ -103,13 +103,3 @@ def has_cartesian_risk(stmt: exp.Expression) -> bool:
         if unqualified_joins and where is None:
             return True
     return False
-
-
-def enforce_row_cap(sql: str, max_rows: int) -> str:
-    """Wrap a validated query so it can never return more than ``max_rows`` rows.
-
-    Wrapping with an outer ROWNUM predicate also neutralises trailing content and
-    works regardless of any inner ORDER BY / FETCH clause.
-    """
-    inner = _strip_trailing_semicolons(sql)
-    return f"SELECT * FROM (\n{inner}\n) WHERE ROWNUM <= {int(max_rows)}"
