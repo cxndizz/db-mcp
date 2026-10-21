@@ -147,9 +147,14 @@ _audit_lock = threading.Lock()
 
 
 def audit(path: str, event: dict[str, Any]) -> None:
-    """Append one JSON line describing a query/tool call. Never raises."""
+    """Append one JSON line describing a query/tool call. Never raises.
+
+    The acting user (from the HTTP gateway's identity header, or 'local' for
+    stdio) is attached automatically.
+    """
     try:
-        record = {"ts": datetime.now(timezone.utc).isoformat(), **event}
+        from .context import get_user
+        record = {"ts": datetime.now(timezone.utc).isoformat(), "user": get_user(), **event}
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         line = json.dumps(record, ensure_ascii=False, default=str)

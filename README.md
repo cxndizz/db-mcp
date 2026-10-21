@@ -116,7 +116,9 @@ reachable from the internet. **Do not expose databases with PII to ChatGPT.**
 | `ORACLE_MAX_CONCURRENCY` | 4 | max concurrent queries |
 | `ORACLE_AUTO_MASK` | 1 | auto-detect & mask PII columns (`0` to disable) |
 | `AUDIT_LOG_PATH` | `./logs/audit.jsonl` | audit log location |
-| `MCP_HTTP_TOKEN` | — | bearer token required for `--http` mode |
+| `MCP_HTTP_TOKEN` | — | bearer token **enforced** in `--http` mode (401 without it) |
+| `MCP_IDENTITY_HEADER` | `x-dbmcp-user` | request header carrying the user id (for audit + quota) |
+| `MCP_RATE_LIMIT` / `MCP_RATE_WINDOW` | 60 / 60 | per-user requests allowed per window (seconds) |
 | `DBEAVER_WORKSPACE` / `SQLDEV_SYSTEM_DIR` | — | override store locations |
 
 Per-connection schema allowlist and masking overrides live in a local

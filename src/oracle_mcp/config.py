@@ -37,6 +37,10 @@ class Settings:
     auto_mask: bool = os.environ.get("ORACLE_AUTO_MASK", "1").lower() not in ("0", "false", "no")
     audit_log_path: str = os.environ.get("AUDIT_LOG_PATH", str(Path.cwd() / "logs" / "audit.jsonl"))
     http_token: str | None = os.environ.get("MCP_HTTP_TOKEN") or None
+    # HTTP gateway: per-user identity + rate limiting
+    identity_header: str = os.environ.get("MCP_IDENTITY_HEADER", "x-dbmcp-user").lower()
+    rate_limit: int = int(os.environ.get("MCP_RATE_LIMIT", "60"))        # requests per window per user
+    rate_window: int = int(os.environ.get("MCP_RATE_WINDOW", "60"))      # seconds
 
 
 SETTINGS = Settings()

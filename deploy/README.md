@@ -76,7 +76,17 @@ Only the proxy is public. Example (Caddy): `chat.example.com { reverse_proxy
 - [ ] Ollama only — no OpenRouter/hosted model sees DB rows.
 - [ ] Review `/var/log/db-mcp/audit.jsonl`.
 
-## Not done yet (later phases)
-- db-mcp's `--http` does not yet **enforce** `MCP_HTTP_TOKEN` (it only warns);
-  localhost binding is the current control. Per-user identity passthrough,
-  per-user audit, and quotas are Phase 2.
+## Phase 2 (done — in the HTTP gateway)
+- `--http` now **enforces** `MCP_HTTP_TOKEN` (401 without a valid bearer).
+- Per-user **identity passthrough**: the trusted proxy/mcpo sets
+  `MCP_IDENTITY_HEADER` (default `x-dbmcp-user`); db-mcp records it on every
+  audit line and keys the rate limit on it.
+- Per-user **rate limit**: `MCP_RATE_LIMIT` requests per `MCP_RATE_WINDOW`
+  seconds (default 60/60) → 429 when exceeded.
+
+Configure Open WebUI → mcpo to forward the logged-in user as that header so
+audit/quotas are per person rather than per service account.
+
+## Later
+- Per-user DB identity (distinct DB roles per person), shared-store rate limiting
+  for multi-worker, and row-level access policies.

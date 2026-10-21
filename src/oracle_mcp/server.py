@@ -94,10 +94,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # Default: run the MCP server.
     if args.http:
+        import uvicorn
+        from .httpgateway import Gateway
         if not SETTINGS.http_token:
             print("WARNING: MCP_HTTP_TOKEN is not set — the HTTP endpoint will be unauthenticated.",
                   file=sys.stderr)
-        mcp.run(transport="http", host=args.host, port=args.port)
+        # Wrap the FastMCP ASGI app with the gateway (token + identity + quota).
+        app = Gateway(mcp.http_app(path="/mcp"))
+        uvicorn.run(app, host=args.host, port=args.port)
     else:
         mcp.run()  # stdio
     return 0
