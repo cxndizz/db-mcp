@@ -52,31 +52,31 @@ uv run oracle-mcp set-password "192.168.66.11:1521:oraappsdev" --user CHAKKRIA
 
 ### Client configuration
 
-Replace `<GIT_URL>` with your repo once pushed; `uvx` runs it without cloning.
+`uvx` runs it straight from the repo without cloning.
 
 **Claude Code**
 ```bash
-claude mcp add oracle -- uvx --from git+<GIT_URL> oracle-mcp
+claude mcp add oracle -- uvx --from git+https://github.com/cxndizz/db-mcp oracle-mcp
 ```
 
 **Codex CLI** — `~/.codex/config.toml`
 ```toml
 [mcp_servers.oracle]
 command = "uvx"
-args = ["--from", "git+<GIT_URL>", "oracle-mcp"]
+args = ["--from", "git+https://github.com/cxndizz/db-mcp", "oracle-mcp"]
 ```
 
 **Gemini CLI** — `~/.gemini/settings.json`
 ```json
 { "mcpServers": { "oracle": { "command": "uvx",
-  "args": ["--from", "git+<GIT_URL>", "oracle-mcp"] } } }
+  "args": ["--from", "git+https://github.com/cxndizz/db-mcp", "oracle-mcp"] } } }
 ```
 
 **Antigravity** — `~/.gemini/config/mcp_config.json` (global) or
 `.agents/mcp_config.json` (workspace)
 ```json
 { "mcpServers": { "oracle": { "command": "uvx",
-  "args": ["--from", "git+<GIT_URL>", "oracle-mcp"] } } }
+  "args": ["--from", "git+https://github.com/cxndizz/db-mcp", "oracle-mcp"] } } }
 ```
 
 **ChatGPT** (remote only, do this last) — run `--http`, expose it over HTTPS

@@ -20,7 +20,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## 2. Get the code and dependencies
 ```bash
-git clone <GIT_URL> db-mcp && cd db-mcp
+git clone https://github.com/cxndizz/db-mcp db-mcp && cd db-mcp
 uv sync
 ```
 
@@ -48,7 +48,7 @@ OS keyring only.
 
 ## 5. Register the server with the user's MCP client
 Pick the client(s) they use (see README for the exact snippet):
-- Claude Code: `claude mcp add oracle -- uvx --from git+<GIT_URL> oracle-mcp`
+- Claude Code: `claude mcp add oracle -- uvx --from git+https://github.com/cxndizz/db-mcp oracle-mcp`
 - Codex / Gemini CLI / Antigravity: add a `command: uvx` MCP entry.
 - ChatGPT: remote HTTP only — do this last and only for non-PII databases.
 

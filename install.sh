@@ -35,4 +35,4 @@ fi
 
 echo
 echo "Done."
-echo "Register with Claude Code:  claude mcp add oracle -- uvx --from git+<GIT_URL> oracle-mcp"
+echo "Register with Claude Code:  claude mcp add oracle -- uvx --from git+https://github.com/cxndizz/db-mcp oracle-mcp"

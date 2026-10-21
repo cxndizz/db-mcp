@@ -30,4 +30,4 @@ if ($id) {
 }
 
 Write-Host "`nDone." -ForegroundColor Green
-Write-Host "Register with Claude Code:  claude mcp add oracle -- uvx --from git+<GIT_URL> oracle-mcp"
+Write-Host "Register with Claude Code:  claude mcp add oracle -- uvx --from git+https://github.com/cxndizz/db-mcp oracle-mcp"
