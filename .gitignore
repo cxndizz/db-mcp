@@ -8,6 +8,11 @@ logs/
 *.log
 *.jsonl
 
+# Data exports (may contain PII — never commit)
+exports/
+*.xlsx
+*.csv
+
 # Python
 __pycache__/
 *.py[cod]
