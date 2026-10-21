@@ -1,0 +1,22 @@
+[
+  {
+    "name": "pg-sandbox",
+    "engine": "postgres",
+    "host": "127.0.0.1",
+    "port": 15432,
+    "db_name": "sandbox",
+    "username": "mcp_ro"
+  }
+
+  // Phase 3 — add the real Oracle (prefer a READ REPLICA), and grant its
+  // read-only user SELECT only on PII-redacted views:
+  // ,{
+  //   "name": "oracle-prod-ro",
+  //   "engine": "oracle",
+  //   "host": "oradb-replica.internal",
+  //   "port": 1521,
+  //   "db_name": "ORCLPDB",
+  //   "is_service": true,
+  //   "username": "mcp_ro"
+  // }
+]

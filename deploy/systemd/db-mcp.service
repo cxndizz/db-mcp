@@ -1,0 +1,23 @@
+[Unit]
+Description=db-mcp read-only MCP server (HTTP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dbmcp
+Group=dbmcp
+EnvironmentFile=/etc/db-mcp/env
+# Bind to localhost only — mcpo (same host) is the sole caller.
+ExecStart=/usr/local/bin/uvx --from git+https://github.com/cxndizz/db-mcp oracle-mcp --http --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=3
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/db-mcp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,42 @@
+# Phase 1 — on-prem chat stack (Ollama only, no external LLM).
+#
+#   Open WebUI (login + chat) --OpenAI API--> Ollama (local models)
+#        \--OpenAPI(tools)--> mcpo --MCP--> db-mcp(HTTP) --> DB
+#
+# db-mcp and mcpo run on the host as systemd units (see systemd/), so this
+# compose only brings up the two heavy services. Put a reverse proxy (TLS) in
+# front of Open WebUI; keep everything else on localhost.
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    # GPU strongly recommended. With the NVIDIA Container Toolkit installed:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+    restart: unless-stopped
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    depends_on: [ollama]
+    ports:
+      - "127.0.0.1:3000:8080"        # put TLS reverse proxy in front of this
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      # First account created becomes admin; disable open sign-up afterwards:
+      ENABLE_SIGNUP: "false"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # so it can reach mcpo on the host
+    volumes:
+      - open-webui:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  ollama:
+  open-webui:

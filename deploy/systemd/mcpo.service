@@ -1,0 +1,27 @@
+[Unit]
+Description=mcpo (MCP -> OpenAPI proxy) for Open WebUI
+After=network-online.target db-mcp.service
+Wants=network-online.target
+Requires=db-mcp.service
+
+[Service]
+Type=simple
+User=dbmcp
+Group=dbmcp
+EnvironmentFile=/etc/db-mcp/env
+# NOTE: pin a recent `mcp` — older resolutions fail with
+#   ImportError: cannot import name 'streamablehttp_client'
+# so force mcp>=1.12 into mcpo's environment.
+ExecStart=/usr/local/bin/uvx --with "mcp>=1.12.0" mcpo \
+  --host 127.0.0.1 --port 8001 \
+  --api-key ${MCPO_API_KEY} \
+  --config /etc/db-mcp/mcpo.config.json
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
