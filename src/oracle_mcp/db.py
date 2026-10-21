@@ -104,7 +104,12 @@ def meta_query(selector: str, sql: str, binds: dict[str, Any] | None = None,
     with _open(engine, conn, username, password) as c:
         cur = c.cursor()
         engine.begin_read_only(cur)
-        cur.execute(sql, binds or {})
+        # Pass params only when present: psycopg scans for '%' placeholders when
+        # params are given, which breaks a literal '%' in SQL (e.g. LIKE 'pg\_%').
+        if binds:
+            cur.execute(sql, binds)
+        else:
+            cur.execute(sql)
         columns = [d[0].upper() for d in cur.description]
         return [dict(zip(columns, r)) for r in cur.fetchmany(cap)]
 
