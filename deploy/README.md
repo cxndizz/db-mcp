@@ -51,6 +51,12 @@ cp env.example              /etc/db-mcp/env
 #   DB_MCP_PW_127_0_0_1_15432_SANDBOX=mcp_ro
 chmod 600 /etc/db-mcp/env && chown dbmcp /etc/db-mcp/env
 
+# db-mcp enforces its bearer token, so mcpo must send it: inject MCP_HTTP_TOKEN
+# into the copied mcpo config (replaces the REPLACE_WITH_MCP_HTTP_TOKEN placeholder)
+TOKEN=$(grep '^MCP_HTTP_TOKEN=' /etc/db-mcp/env | cut -d= -f2-)
+sed -i "s|REPLACE_WITH_MCP_HTTP_TOKEN|$TOKEN|" /etc/db-mcp/mcpo.config.json
+chmod 600 /etc/db-mcp/mcpo.config.json && chown dbmcp /etc/db-mcp/mcpo.config.json
+
 # units (first start is slow — uvx builds db-mcp from git)
 cp systemd/*.service /etc/systemd/system/
 systemctl daemon-reload
@@ -63,10 +69,16 @@ mcpo binds `0.0.0.0:8001` (so the Open WebUI container can reach it); keep 8001
 Check: `curl -s localhost:8000/mcp/ >/dev/null && echo ok` and
 `systemctl status db-mcp mcpo`.
 
-> **Known gotcha (verified):** some `mcpo` resolutions fail at startup with
-> `ImportError: cannot import name 'streamablehttp_client'`. That's an `mcp`
-> version mismatch, not db-mcp. The unit pins `mcp>=1.12.0` to avoid it; if it
-> still bites, `uvx --refresh --with "mcp>=1.12.0" mcpo ...`.
+> **Known gotcha (verified on Rocky):** `mcpo` fails at startup with
+> `ImportError: cannot import name 'streamablehttp_client'` when it resolves an
+> incompatible `mcp` (a too-new `mcp`, or a bleeding-edge Python like 3.15).
+> Fix: pin **Python 3.12** and let mcpo choose its own `mcp` — the unit uses
+> `uvx --python 3.12 mcpo ...` (do NOT add `--with mcp...`). If a bad build is
+> cached, clear it once: `sudo -u dbmcp env HOME=/var/lib/db-mcp
+> UV_CACHE_DIR=/var/lib/db-mcp/cache uvx --refresh --python 3.12 mcpo --help`.
+>
+> **SELinux:** if a unit dies with `203/EXEC … Permission denied` on
+> `/usr/local/bin/uvx`, relabel it: `restorecon -v /usr/local/bin/uv*`.
 
 ### 3. Wire the tools into Open WebUI
 Settings → Tools → Add → URL `http://host.docker.internal:8001`, API key =
