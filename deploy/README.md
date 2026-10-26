@@ -10,112 +10,108 @@ users ──TLS──> reverse proxy ──> Open WebUI (login, chat)
                                   Ollama (models)         mcpo ──MCP(HTTP)──> db-mcp ──> DB
 ```
 
-## Why each piece
-- **Ollama** runs the models locally (data residency). **Ollama does not speak
-  MCP** — it only serves models + tool-calling.
-- **Open WebUI** is the chat UI + accounts + login.
-- **mcpo** bridges MCP → OpenAPI so Open WebUI/the model can call db-mcp's tools.
-- **db-mcp** is the read-only gateway to the DB (this repo), run as an HTTP
-  service bound to localhost.
+**Verified working on Rocky 10** with this exact layout:
+- **Ollama** + **Open WebUI** as containers (compose below).
+- **db-mcp** as a host service from a fixed uv venv (systemd).
+- **mcpo** as the official container with `--network host` (consistent deps —
+  avoids the `mcp`/`fastapi` version traps you hit installing it by hand).
 
-## Install
-
-### 1. Heavy services (containers)
+## 1. Heavy services (containers)
 ```bash
 cd deploy
-docker compose up -d        # ollama + open-webui
-docker exec -it ollama ollama pull qwen2.5:14b   # a tool-calling model
+docker compose up -d                                  # ollama + open-webui
+docker exec -it ollama ollama pull qwen2.5:3b         # a small CPU-friendly tool-calling model
 ```
-GPU strongly recommended (uncomment the `deploy.resources` block; install the
-NVIDIA Container Toolkit). Open WebUI: `http://127.0.0.1:3000` — create the
-first (admin) account; sign-up is disabled for everyone else.
+GPU strongly recommended for anything bigger (uncomment the `deploy.resources`
+block + install the NVIDIA Container Toolkit). Open WebUI: reach it via an SSH
+tunnel `ssh -L 3000:127.0.0.1:3000 user@server`, open http://localhost:3000, and
+create the first (admin) account; sign-up is disabled for everyone else.
 
-### 2. db-mcp + mcpo (host services)
+## 2. db-mcp (host service, fixed venv)
 ```bash
-# uv available to the service user (install system-wide)
+# uv available to the service user (system-wide)
 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
-/usr/local/bin/uvx --version
+# SELinux (Rocky): relabel so systemd may exec it, else 203/EXEC Permission denied
+restorecon -v /usr/local/bin/uv /usr/local/bin/uvx
 
-# service user WITH a home + a writable uvx cache
+# service user WITH a home (uv writes its venv/cache there)
 useradd -r -d /var/lib/db-mcp -s /sbin/nologin dbmcp 2>/dev/null || true
 mkdir -p /var/lib/db-mcp/cache /var/log/db-mcp /etc/db-mcp
 chown -R dbmcp:dbmcp /var/lib/db-mcp /var/log/db-mcp
 
-# config
+# install db-mcp into a fixed venv (deterministic — no per-start uvx resolution)
+sudo -u dbmcp env HOME=/var/lib/db-mcp UV_CACHE_DIR=/var/lib/db-mcp/cache \
+  /usr/local/bin/uv tool install --force --from git+https://github.com/cxndizz/db-mcp oracle-mcp
+
+# config + secrets
 cp connections.example.json /etc/db-mcp/connections.json
 cp mcpo.config.json         /etc/db-mcp/mcpo.config.json
 cp env.example              /etc/db-mcp/env
-# edit /etc/db-mcp/env: set real secrets, e.g.
-#   MCP_HTTP_TOKEN=$(openssl rand -hex 24)
-#   MCPO_API_KEY=$(openssl rand -hex 24)
-#   DB_MCP_PW_127_0_0_1_15432_SANDBOX=mcp_ro
-chmod 600 /etc/db-mcp/env && chown dbmcp /etc/db-mcp/env
-
-# db-mcp enforces its bearer token, so mcpo must send it: inject MCP_HTTP_TOKEN
-# into the copied mcpo config (replaces the REPLACE_WITH_MCP_HTTP_TOKEN placeholder)
-TOKEN=$(grep '^MCP_HTTP_TOKEN=' /etc/db-mcp/env | cut -d= -f2-)
+TOKEN=$(openssl rand -hex 24); APIKEY=$(openssl rand -hex 24)
+sed -i "s|^MCP_HTTP_TOKEN=.*|MCP_HTTP_TOKEN=$TOKEN|; s|^MCPO_API_KEY=.*|MCPO_API_KEY=$APIKEY|" /etc/db-mcp/env
+# mcpo must send db-mcp's bearer token -> inject it into the mcpo config
 sed -i "s|REPLACE_WITH_MCP_HTTP_TOKEN|$TOKEN|" /etc/db-mcp/mcpo.config.json
-chmod 600 /etc/db-mcp/mcpo.config.json && chown dbmcp /etc/db-mcp/mcpo.config.json
+# set the real DB password(s): DB_MCP_PW_<id> (e.g. mcp_ro for the sandbox)
+chmod 600 /etc/db-mcp/env /etc/db-mcp/mcpo.config.json
+chown dbmcp /etc/db-mcp/env /etc/db-mcp/mcpo.config.json
 
-# units (first start is slow — uvx builds db-mcp from git)
-cp systemd/*.service /etc/systemd/system/
+# unit (execs the installed binary; stays on 127.0.0.1)
+cp systemd/db-mcp.service /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now db-mcp mcpo
-systemctl status db-mcp mcpo --no-pager
-journalctl -u db-mcp -n 40 --no-pager     # if it doesn't come up
+systemctl enable --now db-mcp
+curl -s -o /dev/null -w 'db-mcp -> %{http_code} (expect 401)\n' localhost:8000/mcp/
 ```
-mcpo binds `0.0.0.0:8001` (so the Open WebUI container can reach it); keep 8001
-**closed in firewalld** — it is internal only. db-mcp stays on `127.0.0.1:8000`.
-Check: `curl -s localhost:8000/mcp/ >/dev/null && echo ok` and
-`systemctl status db-mcp mcpo`.
+Upgrade later with `uv tool install --force --from git+... oracle-mcp` + `systemctl restart db-mcp`.
 
-> **Known gotcha (verified on Rocky):** `mcpo` fails at startup with
-> `ImportError: cannot import name 'streamablehttp_client'` when uv resolves an
-> incompatible `mcp` from cache. Fix: pin Python 3.12 AND exact versions — the
-> unit uses `uvx --python 3.12 --from "mcpo==0.0.20" --with "mcp==2.3.0" mcpo`.
-> To find a current working pair: `uvx --refresh --python 3.12 --from mcpo
-> python -c "import importlib.metadata as m; print(m.version('mcp'), m.version('mcpo'))"`.
-> If it crash-looped, clear the counter: `systemctl reset-failed mcpo`.
->
-> **SELinux:** if a unit dies with `203/EXEC … Permission denied` on
-> `/usr/local/bin/uvx`, relabel it: `restorecon -v /usr/local/bin/uv*`.
+## 3. mcpo (official container, host network)
+Installing mcpo by hand is a version minefield (`mcp`/`fastapi` mismatches). Use
+the image — its deps are consistent.
+```bash
+APIKEY=$(grep '^MCPO_API_KEY=' /etc/db-mcp/env | cut -d= -f2-)
+docker run -d --name mcpo --restart unless-stopped --network host \
+  -v /etc/db-mcp/mcpo.config.json:/config.json:ro \
+  ghcr.io/open-webui/mcpo:main \
+  --host 0.0.0.0 --port 8001 --api-key "$APIKEY" --config /config.json
+curl -s localhost:8001/oracle/openapi.json | head -c 200; echo   # JSON with /run_query etc.
+```
+`--network host` lets mcpo reach db-mcp at `127.0.0.1:8000` (the config URL) just
+like a host process, and listens on `0.0.0.0:8001` so the Open WebUI container
+can reach it. Keep 8000/8001 **closed in firewalld** (internal only).
 
-### 3. Wire the tools into Open WebUI
-Settings → Tools → Add → URL `http://host.docker.internal:8001`, API key =
-`MCPO_API_KEY`. The db-mcp tools (`list_tables`, `run_query`, …) now appear; the
-model calls them during chat.
+## 4. Wire the tools into Open WebUI
+Admin Settings → Tools → **External Tool Servers** → **+**:
+- Type **OpenAPI**, URL `http://host.docker.internal:8001/oracle`
+- Auth **Bearer**, key = `MCPO_API_KEY`
+Save. In a chat, pick the model, enable the tool (🔧), and ask e.g. *"what tables
+are in schema loan"*.
 
-### 4. Reverse proxy + TLS
-Only the proxy is public. Example (Caddy): `chat.example.com { reverse_proxy
-127.0.0.1:3000 }`. Everything else stays on `127.0.0.1`.
-
-## Verified so far (on the dev machine)
-- db-mcp **HTTP mode** serves all 8 tools over streamable-http; a client did
-  `list_tables` + `run_query` (cost gate) + a masked PII query against the
-  Postgres sandbox. This is the exact server mcpo will proxy.
-- The sandbox (`../sandbox`) is the DB used here until the real Oracle is wired.
+## 5. Reverse proxy + TLS
+Only the proxy is public (e.g. Caddy: `chat.example.com { reverse_proxy
+127.0.0.1:3000 }`). Everything else stays on `127.0.0.1` / behind firewalld.
 
 ## Security checklist (v1 = single service account)
-- [ ] db-mcp and mcpo bound to `127.0.0.1`; only the reverse proxy is public.
+- [ ] db-mcp on `127.0.0.1`; mcpo/db-mcp ports closed in firewalld.
 - [ ] TLS on the proxy; Open WebUI sign-up disabled after the admin account.
-- [ ] `/etc/db-mcp/env` is `chmod 600`; no secrets in git.
+- [ ] `/etc/db-mcp/env` + `mcpo.config.json` are `chmod 600`; no secrets in git.
 - [ ] **DB role is the real PII boundary:** `mcp_ro` has `GRANT SELECT` only on
       PII-redacted views (not base tables) — app masking is defense-in-depth.
 - [ ] Connect real Oracle via a **read replica**, not prod primary.
 - [ ] Ollama only — no OpenRouter/hosted model sees DB rows.
-- [ ] Review `/var/log/db-mcp/audit.jsonl`.
+- [ ] Review `/var/log/db-mcp/audit.jsonl` (each line has the acting user).
 
 ## Phase 2 (done — in the HTTP gateway)
-- `--http` now **enforces** `MCP_HTTP_TOKEN` (401 without a valid bearer).
-- Per-user **identity passthrough**: the trusted proxy/mcpo sets
-  `MCP_IDENTITY_HEADER` (default `x-dbmcp-user`); db-mcp records it on every
-  audit line and keys the rate limit on it.
-- Per-user **rate limit**: `MCP_RATE_LIMIT` requests per `MCP_RATE_WINDOW`
-  seconds (default 60/60) → 429 when exceeded.
+- `--http` enforces `MCP_HTTP_TOKEN` (401 without it).
+- Identity passthrough: `MCP_IDENTITY_HEADER` (default `x-dbmcp-user`) → per-user
+  audit + rate limit (`MCP_RATE_LIMIT`/`MCP_RATE_WINDOW`, default 60/60 → 429).
+  Configure the proxy/mcpo to forward the logged-in user as that header.
 
-Configure Open WebUI → mcpo to forward the logged-in user as that header so
-audit/quotas are per person rather than per service account.
+## Gotchas we hit (so you don't)
+- **SELinux 203/EXEC** on `/usr/local/bin/uvx`: `restorecon -v /usr/local/bin/uv*`.
+- **mcpo `ImportError: streamablehttp_client` / `ssl_certfile` TypeError**: don't
+  hand-install mcpo — use the container (step 3).
+- **db-mcp `No module named 'key_value'`**: FastMCP 4.x needs `py-key-value-aio`
+  (now a dependency) for HTTP sessions — a fresh `uv tool install` pulls it.
 
 ## Later
 - Per-user DB identity (distinct DB roles per person), shared-store rate limiting
-  for multi-worker, and row-level access policies.
+  for multi-worker, row-level access policies.
