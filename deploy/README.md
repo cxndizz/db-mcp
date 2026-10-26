@@ -70,12 +70,12 @@ Check: `curl -s localhost:8000/mcp/ >/dev/null && echo ok` and
 `systemctl status db-mcp mcpo`.
 
 > **Known gotcha (verified on Rocky):** `mcpo` fails at startup with
-> `ImportError: cannot import name 'streamablehttp_client'` when it resolves an
-> incompatible `mcp` (a too-new `mcp`, or a bleeding-edge Python like 3.15).
-> Fix: pin **Python 3.12** and let mcpo choose its own `mcp` — the unit uses
-> `uvx --python 3.12 mcpo ...` (do NOT add `--with mcp...`). If a bad build is
-> cached, clear it once: `sudo -u dbmcp env HOME=/var/lib/db-mcp
-> UV_CACHE_DIR=/var/lib/db-mcp/cache uvx --refresh --python 3.12 mcpo --help`.
+> `ImportError: cannot import name 'streamablehttp_client'` when uv resolves an
+> incompatible `mcp` from cache. Fix: pin Python 3.12 AND exact versions — the
+> unit uses `uvx --python 3.12 --from "mcpo==0.0.20" --with "mcp==2.3.0" mcpo`.
+> To find a current working pair: `uvx --refresh --python 3.12 --from mcpo
+> python -c "import importlib.metadata as m; print(m.version('mcp'), m.version('mcpo'))"`.
+> If it crash-looped, clear the counter: `systemctl reset-failed mcpo`.
 >
 > **SELinux:** if a unit dies with `203/EXEC … Permission denied` on
 > `/usr/local/bin/uvx`, relabel it: `restorecon -v /usr/local/bin/uv*`.
