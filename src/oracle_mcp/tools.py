@@ -33,9 +33,12 @@ def _ident(name: str, what: str) -> str:
 
 
 def _allowed_schemas(selector: str) -> list[str] | None:
-    conn = db.find(selector)
-    ov = get_override(conn.id) if conn else None
-    return ov.schemas if ov and ov.schemas else None
+    try:
+        conn = db._resolve_conn(selector)
+    except Exception:
+        return None
+    ov = get_override(conn.id)
+    return ov.schemas if ov.schemas else None
 
 
 def register(mcp) -> None:
@@ -59,7 +62,7 @@ def register(mcp) -> None:
         return out
 
     @mcp.tool
-    def list_schemas(connection: str) -> list[str]:
+    def list_schemas(connection: str = "") -> list[str]:
         """List schemas (owners) visible on a connection, limited to the allowlist
         if one is configured."""
         allow = _allowed_schemas(connection)
@@ -74,7 +77,7 @@ def register(mcp) -> None:
         return result
 
     @mcp.tool
-    def list_tables(schema: str, connection: str) -> list[dict[str, str]]:
+    def list_tables(schema: str, connection: str = "") -> list[dict[str, str]]:
         """List tables and views in a schema."""
         _ident(schema, "schema")
         eng = db.engine_for(connection)
@@ -85,7 +88,7 @@ def register(mcp) -> None:
         return rows
 
     @mcp.tool
-    def describe_table(table: str, schema: str, connection: str) -> dict[str, Any]:
+    def describe_table(table: str, schema: str, connection: str = "") -> dict[str, Any]:
         """Describe a table/view: columns, types, nullability, PK/FK, and comments.
         Columns that look like personal data are flagged `masked`."""
         _ident(schema, "schema")
@@ -112,7 +115,7 @@ def register(mcp) -> None:
         return {"schema": schema, "table": table, "columns": cols}
 
     @mcp.tool
-    def get_object_ddl(object_name: str, schema: str, connection: str) -> str:
+    def get_object_ddl(object_name: str, schema: str, connection: str = "") -> str:
         """Return the CREATE DDL for a table/view (DBMS_METADATA on Oracle; a
         catalog-derived CREATE on PostgreSQL)."""
         _ident(schema, "schema")
@@ -124,7 +127,7 @@ def register(mcp) -> None:
         return ddl
 
     @mcp.tool
-    def search_objects(keyword: str, connection: str) -> dict[str, list[dict[str, str]]]:
+    def search_objects(keyword: str, connection: str = "") -> dict[str, list[dict[str, str]]]:
         """Search for tables/views and columns whose name contains `keyword`."""
         eng = db.engine_for(connection)
         owners = _allowed_schemas(connection)
@@ -136,7 +139,7 @@ def register(mcp) -> None:
         return {"objects": objs, "columns": cols}
 
     @mcp.tool
-    def sample_table(table: str, schema: str, connection: str, limit: int = 20) -> dict[str, Any]:
+    def sample_table(table: str, schema: str, connection: str = "", limit: int = 20) -> dict[str, Any]:
         """Preview up to `limit` rows from a table (masked). Great for seeing shape."""
         _ident(schema, "schema")
         _ident(table, "table")
@@ -153,7 +156,7 @@ def register(mcp) -> None:
         return result
 
     @mcp.tool
-    def run_query(sql: str, connection: str, max_rows: int = 200) -> dict[str, Any]:
+    def run_query(sql: str, connection: str = "", max_rows: int = 200) -> dict[str, Any]:
         """Run a read-only SELECT query and return the rows.
 
         Only a single SELECT/WITH statement is allowed. The query is checked with

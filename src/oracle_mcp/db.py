@@ -11,7 +11,7 @@ from typing import Any, Iterator
 
 from . import keyvault
 from .config import SETTINGS, ConnOverride, get_override
-from .discovery import Connection, find
+from .discovery import Connection, discover, find
 from .engines import Engine, get_engine
 from .safety import parse_single_select
 
@@ -47,11 +47,22 @@ def _secret(conn_id: str) -> str | None:
     return os.environ.get(env_key) or keyvault.get_password(conn_id)
 
 
+def _resolve_conn(selector: str) -> Connection:
+    """Find a connection by selector, or fall back to the only one if there is
+    exactly one (so a model need not know/guess the connection name)."""
+    conn = find(selector) if selector else None
+    if conn is None:
+        conns = discover()
+        if len(conns) == 1:
+            return conns[0]
+        ids = [c.id for c in conns] or ["(none configured)"]
+        raise DbError(f"Unknown connection {selector!r}. Available connections: {ids}")
+    return conn
+
+
 def resolve(selector: str) -> tuple[Connection, ConnOverride, str, str]:
     """Resolve a selector to (connection, override, username, password)."""
-    conn = find(selector)
-    if conn is None:
-        raise DbError(f"Unknown connection '{selector}'. Use list_connections to see available ones.")
+    conn = _resolve_conn(selector)
     override = get_override(conn.id)
     username = conn.username or override.username
     if not username:
@@ -63,10 +74,7 @@ def resolve(selector: str) -> tuple[Connection, ConnOverride, str, str]:
 
 
 def engine_for(selector: str) -> Engine:
-    conn = find(selector)
-    if conn is None:
-        raise DbError(f"Unknown connection '{selector}'.")
-    return get_engine(conn.engine)
+    return get_engine(_resolve_conn(selector).engine)
 
 
 @contextmanager
