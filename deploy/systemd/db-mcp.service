@@ -8,6 +8,9 @@ Type=simple
 User=dbmcp
 Group=dbmcp
 EnvironmentFile=/etc/db-mcp/env
+# uvx needs a writable HOME + cache (the service user has no real home dir).
+Environment=HOME=/var/lib/db-mcp
+Environment=UV_CACHE_DIR=/var/lib/db-mcp/cache
 # Bind to localhost only — mcpo (same host) is the sole caller.
 ExecStart=/usr/local/bin/uvx --from git+https://github.com/cxndizz/db-mcp oracle-mcp --http --host 127.0.0.1 --port 8000
 Restart=on-failure
@@ -16,7 +19,7 @@ RestartSec=3
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/log/db-mcp
+ReadWritePaths=/var/lib/db-mcp /var/log/db-mcp
 PrivateTmp=true
 
 [Install]

@@ -9,11 +9,14 @@ Type=simple
 User=dbmcp
 Group=dbmcp
 EnvironmentFile=/etc/db-mcp/env
+Environment=HOME=/var/lib/db-mcp
+Environment=UV_CACHE_DIR=/var/lib/db-mcp/cache
 # NOTE: pin a recent `mcp` — older resolutions fail with
 #   ImportError: cannot import name 'streamablehttp_client'
-# so force mcp>=1.12 into mcpo's environment.
+# Bind 0.0.0.0 so the Open WebUI *container* can reach it via
+# host.docker.internal; keep port 8001 CLOSED in firewalld (internal only).
 ExecStart=/usr/local/bin/uvx --with "mcp>=1.12.0" mcpo \
-  --host 127.0.0.1 --port 8001 \
+  --host 0.0.0.0 --port 8001 \
   --api-key ${MCPO_API_KEY} \
   --config /etc/db-mcp/mcpo.config.json
 Restart=on-failure
@@ -21,6 +24,7 @@ RestartSec=3
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
+ReadWritePaths=/var/lib/db-mcp
 PrivateTmp=true
 
 [Install]

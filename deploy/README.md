@@ -32,17 +32,34 @@ first (admin) account; sign-up is disabled for everyone else.
 
 ### 2. db-mcp + mcpo (host services)
 ```bash
-# one-time
-sudo useradd -r -s /usr/sbin/nologin dbmcp
-sudo mkdir -p /etc/db-mcp /var/log/db-mcp && sudo chown dbmcp /var/log/db-mcp
-sudo cp connections.example.json /etc/db-mcp/connections.json
-sudo cp mcpo.config.json         /etc/db-mcp/mcpo.config.json
-sudo cp env.example              /etc/db-mcp/env      # edit secrets, chmod 600
-sudo chmod 600 /etc/db-mcp/env
-sudo cp systemd/*.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now db-mcp mcpo
+# uv available to the service user (install system-wide)
+curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+/usr/local/bin/uvx --version
+
+# service user WITH a home + a writable uvx cache
+useradd -r -d /var/lib/db-mcp -s /sbin/nologin dbmcp 2>/dev/null || true
+mkdir -p /var/lib/db-mcp/cache /var/log/db-mcp /etc/db-mcp
+chown -R dbmcp:dbmcp /var/lib/db-mcp /var/log/db-mcp
+
+# config
+cp connections.example.json /etc/db-mcp/connections.json
+cp mcpo.config.json         /etc/db-mcp/mcpo.config.json
+cp env.example              /etc/db-mcp/env
+# edit /etc/db-mcp/env: set real secrets, e.g.
+#   MCP_HTTP_TOKEN=$(openssl rand -hex 24)
+#   MCPO_API_KEY=$(openssl rand -hex 24)
+#   DB_MCP_PW_127_0_0_1_15432_SANDBOX=mcp_ro
+chmod 600 /etc/db-mcp/env && chown dbmcp /etc/db-mcp/env
+
+# units (first start is slow — uvx builds db-mcp from git)
+cp systemd/*.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now db-mcp mcpo
+systemctl status db-mcp mcpo --no-pager
+journalctl -u db-mcp -n 40 --no-pager     # if it doesn't come up
 ```
+mcpo binds `0.0.0.0:8001` (so the Open WebUI container can reach it); keep 8001
+**closed in firewalld** — it is internal only. db-mcp stays on `127.0.0.1:8000`.
 Check: `curl -s localhost:8000/mcp/ >/dev/null && echo ok` and
 `systemctl status db-mcp mcpo`.
 
