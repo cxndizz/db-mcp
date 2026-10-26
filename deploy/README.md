@@ -112,6 +112,19 @@ Only the proxy is public (e.g. Caddy: `chat.example.com { reverse_proxy
 - **db-mcp `No module named 'key_value'`**: FastMCP 4.x needs `py-key-value-aio`
   (now a dependency) for HTTP sessions — a fresh `uv tool install` pulls it.
 
+## Adding the real Oracle later (Phase 3)
+Add an entry to `/etc/db-mcp/connections.json` — **valid JSON, no comments**
+(JSON comments break the loader). Prefer a READ REPLICA, and grant its read-only
+user SELECT only on PII-redacted views:
+```json
+[
+  { "name": "pg-sandbox", "engine": "postgres", "host": "127.0.0.1", "port": 15432, "db_name": "sandbox", "username": "mcp_ro" },
+  { "name": "oracle-prod-ro", "engine": "oracle", "host": "oradb-replica.internal", "port": 1521, "db_name": "ORCLPDB", "is_service": true, "username": "mcp_ro" }
+]
+```
+Then set `DB_MCP_PW_<id>` for it in `/etc/db-mcp/env` (id = `host:port/service`
+or `host:port:sid`, non-alphanumerics → `_`, upper-cased).
+
 ## Later
 - Per-user DB identity (distinct DB roles per person), shared-store rate limiting
   for multi-worker, row-level access policies.
